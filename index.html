@@ -3,465 +3,384 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ToolifyX – All-in-One Tools Hub</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js" defer></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+
+<title>ToolifyX — Free Online Tools</title>
+
+<!-- SEO -->
+<meta name="description" content="ToolifyX provides free online tools: video downloaders, PDF tools, image utilities, AI generators & more.">
+<meta name="keywords" content="video downloader, pdf tools, ai tools, image tools, online tools">
+<meta name="author" content="ToolifyX">
+
+<!-- Open Graph -->
+<meta property="og:title" content="ToolifyX — Free Online Tools">
+<meta property="og:description" content="Free video downloaders, PDF utilities, image tools & AI generators.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://aroearning.netlify.app/">
+<meta property="og:image" content="https://aroearning.netlify.app/assets/toolify-og-image.png">
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+
+<!-- Favicon -->
+<link rel="icon" href="assets/favicon.ico">
+
 <style>
-:root {
-  --bg-light: #f8f9fa;
-  --card-light: #ffffff;
-  --accent: #4dabf7;
-  --accent-2: #3b8beb;
-  --muted: #6c757d;
-  --danger: #f06595;
-  --success: #37b24d;
-  --shadow: rgba(0,0,0,0.08);
-
-  --bg-dark: #121212;
-  --card-dark: #1e1e1e;
-  --muted-dark: #a0a0a0;
+:root{
+  --bg:#f7f9fc;
+  --card:#ffffff;
+  --primary:#4f46e5;
+  --accent:#06b6d4;
+  --text:#1f2937;
+  --muted:#6b7280;
+  --border:#e5e7eb;
+  --shadow:rgba(0,0,0,0.08);
 }
 
-body { margin:0; font-family: 'Inter', sans-serif; background: var(--bg-light); color: #212529; transition:0.3s; }
-body.dark { background: var(--bg-dark); color: #ffffff; }
-header { padding:20px 25px; display:flex; justify-content:space-between; align-items:center; }
-.logo { font-weight:700; font-size:1.5rem; color: var(--accent); }
-body.dark .logo { color: var(--accent-2); }
-.tag { font-size:0.9rem; color: var(--muted); }
-body.dark .tag { color: var(--muted-dark); }
-main { max-width: 1100px; margin: 20px auto; padding:0 20px; }
-.grid { display:grid; grid-template-columns:1fr 2fr; gap:20px; }
-@media(max-width:900px){ .grid{grid-template-columns:1fr;} }
-.card { background: var(--card-light); border-radius:12px; padding:16px; box-shadow:0 4px 12px var(--shadow); transition:0.3s; }
-body.dark .card { background: var(--card-dark); }
-.tool-list { display:flex; flex-direction:column; gap:12px; }
-.tool-btn { display:flex; align-items:center; gap:12px; padding:12px; border-radius:10px; cursor:pointer; border:1px solid rgba(0,0,0,0.05); transition:0.2s; }
-.tool-btn:hover { box-shadow:0 8px 16px var(--shadow); transform: translateY(-2px); }
-.tool-emoji { font-size:20px; }
-.tool-title { font-weight:600; }
-.tool-desc { font-size:0.85rem; color: var(--muted); }
-body.dark .tool-desc { color: var(--muted-dark); }
-.section { display:none; margin-bottom:20px; }
-.section.visible { display:block; }
-.controls { display:flex; gap:10px; flex-wrap:wrap; margin-top:10px; }
-button { border:none; border-radius:8px; padding:8px 14px; cursor:pointer; font-weight:600; transition:0.2s; }
-button.btn { background: linear-gradient(180deg, var(--accent), var(--accent-2)); color:#fff; }
-button.ghost { background:transparent; border:1px solid rgba(0,0,0,0.1); color:var(--muted); }
-body.dark button.ghost { color: var(--muted-dark); border-color: rgba(255,255,255,0.2); }
-button.danger { background: var(--danger); color:#fff; }
-input[type="file"], input[type="text"], textarea, select { width:100%; padding:10px 12px; border-radius:8px; border:1px solid #dee2e6; background: #fff; color:#212529; transition:0.3s; }
-body.dark input, body.dark select, body.dark textarea { background: #2a2a2a; color:#fff; border-color: #444; }
-textarea { min-height:100px; resize:vertical; }
-.result-area { margin-top:12px; padding:10px; border-radius:8px; background: #f1f3f5; border:1px dashed rgba(0,0,0,0.05); transition:0.3s; }
-body.dark .result-area { background: #2a2a2a; border-color: rgba(255,255,255,0.2); }
-.muted { color:var(--muted); }
-body.dark .muted { color: var(--muted-dark); }
-.row { display:flex; gap:10px; flex-wrap:wrap; }
-footer { text-align:center; padding:12px 0; color:var(--muted); font-size:0.9rem; margin-top:30px; }
-body.dark footer { color: var(--muted-dark); }
+*{box-sizing:border-box;margin:0;padding:0;font-family:Inter,system-ui,Arial}
+body{background:var(--bg);color:var(--text)}
+a{text-decoration:none;color:inherit}
 
-/* Theme toggle switch */
-.switch { position:relative; display:inline-block; width:50px; height:24px; margin-left:10px; }
-.switch input { opacity:0;width:0;height:0; }
-.slider { position:absolute; cursor:pointer; top:0; left:0; right:0; bottom:0; background:#ccc; transition:.4s; border-radius:24px; }
-.slider:before { position:absolute; content:""; height:18px; width:18px; left:3px; bottom:3px; background:white; transition:.4s; border-radius:50%; }
-input:checked + .slider { background: var(--accent-2); }
-input:checked + .slider:before { transform: translateX(26px); }
+/* HEADER */
+header{
+  background:linear-gradient(135deg,var(--primary),var(--accent));
+  color:#fff;
+  text-align:center;
+  padding:36px 16px;
+  border-radius:0 0 20px 20px;
+}
+header h1{font-size:2.3rem;margin-bottom:8px}
+header p{opacity:.9}
 
-/* Spinner */
-.spinner {
-  border:4px solid rgba(0,0,0,0.1);
-  border-left-color: var(--accent-2);
-  border-radius:50%;
-  width:30px;
-  height:30px;
-  animation: spin 1s linear infinite;
+/* LAYOUT */
+.container{
+  max-width:1150px;
   margin:auto;
+  padding:32px 16px;
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+  gap:24px;
 }
-@keyframes spin { to { transform: rotate(360deg); } }
+
+/* CARD */
+.tool-card{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:18px;
+  padding:24px;
+  box-shadow:0 12px 25px var(--shadow);
+  transition:.3s;
+  display:flex;
+  flex-direction:column;
+}
+.tool-card:hover{
+  transform:translateY(-6px);
+  box-shadow:0 22px 40px var(--shadow);
+}
+.tool-card h3{
+  color:var(--primary);
+  margin-bottom:8px;
+}
+.tool-card p{
+  color:var(--muted);
+  font-size:.95rem;
+  margin-bottom:18px;
+}
+
+/* BUTTON */
+.btn{
+  margin-top:auto;
+  background:linear-gradient(90deg,var(--primary),var(--accent));
+  color:#fff;
+  padding:10px 18px;
+  border-radius:14px;
+  font-weight:600;
+  text-align:center;
+  transition:.25s;
+}
+.btn:hover{
+  transform:translateY(-2px);
+  box-shadow:0 8px 24px var(--shadow);
+}
+
+/* DOWNLOADERS */
+.badge{
+  background:#eef2ff;
+  color:var(--primary);
+  font-size:.75rem;
+  padding:4px 10px;
+  border-radius:12px;
+  display:inline-block;
+  margin-bottom:10px;
+}
+
+.downloader-buttons{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  margin-top:auto;
+}
+
+.downloader-buttons a{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:14px 16px;
+  background:#f1f5ff;
+  border-radius:14px;
+  font-weight:600;
+  border:1px solid var(--border);
+  transition:.25s;
+  position:relative;
+}
+.downloader-buttons a:hover{
+  background:#eaf0ff;
+  transform:translateY(-2px);
+  box-shadow:0 10px 28px var(--shadow);
+}
+.icon{
+  font-size:1.2rem;
+}
+
+/* ADS */
+.ad-box{
+  grid-column:1/-1;
+  padding:24px;
+  border:2px dashed var(--primary);
+  border-radius:16px;
+  background:#eef2ff;
+  text-align:center;
+  color:#4338ca;
+  font-weight:600;
+}
+
+/* FOOTER */
+footer{
+  text-align:center;
+  padding:32px;
+  color:var(--muted);
+  font-size:.9rem;
+}
+/* SEARCH + FILTER */
+.tool-controls{
+  grid-column:1/-1;
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+}
+
+#toolSearch{
+  padding:14px 18px;
+  border-radius:16px;
+  border:1px solid var(--border);
+  font-size:1rem;
+  outline:none;
+  box-shadow:0 6px 20px rgba(0,0,0,.05);
+}
+
+.filters{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+}
+
+.filter-btn{
+  padding:8px 16px;
+  border-radius:999px;
+  border:1px solid var(--border);
+  background:#fff;
+  cursor:pointer;
+  font-weight:600;
+  transition:.25s;
+}
+
+.filter-btn:hover{
+  background:#eef2ff;
+}
+
+.filter-btn.active{
+  background:linear-gradient(90deg,var(--primary),var(--accent));
+  color:#fff;
+  border:none;
+}
+/* POPULAR TOOL BADGE */
+.tool-card[data-popular="true"]{
+  position: relative;
+  border: 2px solid var(--primary);
+  box-shadow: 0 0 0 rgba(79,70,229,0.4);
+  animation: pulseGlow 2.5s infinite;
+}
+
+.tool-card[data-popular="true"]::before{
+  content: "POPULAR";
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  background: linear-gradient(90deg,#f97316,#facc15);
+  color:#fff;
+  font-size:11px;
+  font-weight:700;
+  padding:4px 8px;
+  border-radius:999px;
+}
+
+@keyframes pulseGlow{
+  0%{ box-shadow: 0 0 0 0 rgba(79,70,229,.4); }
+  70%{ box-shadow: 0 0 0 12px rgba(79,70,229,0); }
+  100%{ box-shadow: 0 0 0 0 rgba(79,70,229,0); }
+}
+
 </style>
 </head>
+
 <body>
 
 <header>
-  <div class="logo">ToolifyX</div>
-  <div style="display:flex;align-items:center;">
-    <div class="tag">Light • Dim Mode</div>
-    <label class="switch">
-      <input type="checkbox" id="themeToggle">
-      <span class="slider"></span>
-    </label>
-  </div>
+
+  <h1>ToolifyX</h1>
+  <p>Free Online Tools — Downloaders, PDF, Image & AI Tools</p>
 </header>
 
-<main>
-  <div class="grid">
-    <!-- Left Panel: Tool List -->
-    <div class="left">
-      <div class="card">
-        <h3>Tools</h3>
-        <p class="muted small">Click a tool to open its panel. Cancel/Reset is available in each tool.</p>
-        <div class="tool-list" style="margin-top:12px">
-          <div class="tool-btn" onclick="openTool('imageCompressor')"><div class="tool-emoji">🖼️</div><div><div class="tool-title">Image Compressor</div><div class="tool-desc">Compress & download images</div></div></div>
-          <div class="tool-btn" onclick="openTool('imageToPdf')"><div class="tool-emoji">🖨️</div><div><div class="tool-title">Image → PDF</div><div class="tool-desc">Convert images to PDF</div></div></div>
-          <div class="tool-btn" onclick="openTool('pdfMerger')"><div class="tool-emoji">📄</div><div><div class="tool-title">PDF Merger</div><div class="tool-desc">Merge multiple PDFs</div></div></div>
-          <div class="tool-btn" onclick="openTool('qrGenerator')"><div class="tool-emoji">🔗</div><div><div class="tool-title">QR Generator</div><div class="tool-desc">Generate QR codes</div></div></div>
-          <div class="tool-btn" onclick="openTool('caseConverter')"><div class="tool-emoji">🔤</div><div><div class="tool-title">Text Case Converter</div><div class="tool-desc">Uppercase, lowercase, sentence</div></div></div>
-          <div class="tool-btn" onclick="openTool('urlShortener')"><div class="tool-emoji">🔗</div><div><div class="tool-title">URL Shortener</div><div class="tool-desc">ShrinkMe helper & redirect</div></div></div>
-          <div class="tool-btn" onclick="openTool('aiTextGenerator')"><div class="tool-emoji">🤖</div><div><div class="tool-title">AI Text Generator</div><div class="tool-desc">Generate text using AI</div></div></div>
-          <div class="tool-btn" onclick="openTool('aiImageGenerator')"><div class="tool-emoji">🖼️</div><div><div class="tool-title">AI Image Generator</div><div class="tool-desc">Generate AI images from prompt</div></div></div>
-        </div>
-      </div>
-    </div>
+<div class="container">
 
-    <!-- Right Panel: Tool Sections -->
-    <div class="right">
-      <!-- IMAGE COMPRESSOR -->
-      <div id="imageCompressor" class="card section">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <h3>🖼️ Image Compressor</h3>
-          <div>
-            <button class="ghost" onclick="resetImageCompressor()">Clear</button>
-            <button class="ghost" onclick="closeAll()">Close</button>
-          </div>
-        </div>
-        <p class="muted small">Select image, choose quality/scale, then compress & download.</p>
-        <input id="imgInput" type="file" accept="image/*">
-        <div style="display:flex; gap:10px; margin-top:10px;">
-          <select id="imgQuality"><option value="0.9">High 90%</option><option value="0.75" selected>Medium 75%</option><option value="0.6">Low 60%</option></select>
-          <select id="imgScale"><option value="1">100%</option><option value="0.75">75%</option><option value="0.5">50%</option></select>
-        </div>
-        <div class="controls"><button class="btn" onclick="compressImage()">Compress</button><button class="ghost" onclick="resetImageCompressor()">Cancel / Reset</button></div>
-        <div id="imgResult" class="result-area"></div>
-        <canvas id="imgCanvas" style="display:none;"></canvas>
-      </div>
+<div class="ad-box">🔥 TOP AD PLACEHOLDER</div>
 
-      <!-- IMAGE → PDF -->
-      <div id="imageToPdf" class="card section">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <h3>🖨️ Image → PDF</h3>
-          <div>
-            <button class="ghost" onclick="resetImageToPdf()">Clear</button>
-            <button class="ghost" onclick="closeAll()">Close</button>
-          </div>
-        </div>
-        <p class="muted small">Select multiple images to create a single PDF.</p>
-        <input id="imagesToPdf" type="file" accept="image/*" multiple>
-        <div class="row" style="margin-top:10px"><button class="btn" onclick="imagesToPdf()">Create PDF</button><button class="ghost" onclick="resetImageToPdf()">Cancel / Reset</button></div>
-        <div id="img2pdfResult" class="result-area"></div>
-      </div>
+ 
+  <!-- FILTER + SEARCH -->
+<div class="tool-controls">
+  <input type="text" id="toolSearch" placeholder="Search tools..." />
 
-      <!-- PDF MERGER -->
-      <div id="pdfMerger" class="card section">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <h3>📄 PDF Merger</h3>
-          <div>
-            <button class="ghost" onclick="resetPdfMerger()">Clear</button>
-            <button class="ghost" onclick="closeAll()">Close</button>
-          </div>
-        </div>
-        <p class="muted small">Select multiple PDFs to merge into one.</p>
-        <input id="pdfFiles" type="file" accept="application/pdf" multiple>
-        <div class="row" style="margin-top:10px"><button class="btn" onclick="mergePDFs()">Merge PDFs</button><button class="ghost" onclick="resetPdfMerger()">Cancel / Reset</button></div>
-        <div id="pdfResult" class="result-area"></div>
-      </div>
-
-      <!-- QR GENERATOR -->
-      <div id="qrGenerator" class="card section">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <h3>🔗 QR Generator</h3>
-          <div>
-            <button class="ghost" onclick="resetQR()">Clear</button>
-            <button class="ghost" onclick="closeAll()">Close</button>
-          </div>
-        </div>
-        <input id="qrText" type="text" placeholder="Enter URL or text">
-        <div class="row" style="margin-top:10px"><button class="btn" onclick="generateQR()">Generate QR</button><button class="ghost" onclick="resetQR()">Cancel / Reset</button></div>
-        <div id="qrResult" class="result-area"></div>
-      </div>
-
-      <!-- TEXT CASE CONVERTER -->
-      <div id="caseConverter" class="card section">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <h3>🔤 Text Case Converter</h3>
-          <div>
-            <button class="ghost" onclick="resetCase()">Clear</button>
-            <button class="ghost" onclick="closeAll()">Close</button>
-          </div>
-        </div>
-        <textarea id="caseText" placeholder="Paste your text"></textarea>
-        <div class="row" style="margin-top:10px"><button class="btn" onclick="convertCase('upper')">UPPERCASE</button><button class="btn" onclick="convertCase('lower')">lowercase</button><button class="btn" onclick="convertCase('sentence')">Sentence Case</button><button class="ghost" onclick="resetCase()">Cancel / Reset</button></div>
-        <div id="caseResult" class="result-area"></div>
-      </div>
-
-      <!-- URL SHORTENER -->
-      <div id="urlShortener" class="card section">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <h3>🔗 URL Shortener</h3>
-          <div>
-            <button class="ghost" onclick="resetShortener()">Clear</button>
-            <button class="ghost" onclick="closeAll()">Close</button>
-          </div>
-        </div>
-        <input id="longUrl" type="text" placeholder="Enter long URL">
-        <div class="row" style="margin-top:10px"><button class="btn" onclick="shortenWithApi()">Shorten with API</button><button class="ghost" onclick="createRedirectHtml()">Create redirect page</button><button class="ghost" onclick="resetShortener()">Cancel / Reset</button></div>
-        <div id="shortResult" class="result-area"></div>
-      </div>
-
-      <!-- AI TEXT GENERATOR -->
-      <div id="aiTextGenerator" class="card section">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <h3>🤖 AI Text Generator</h3>
-          <div>
-            <button class="ghost" onclick="resetAiText()">Clear</button>
-            <button class="ghost" onclick="closeAll()">Close</button>
-          </div>
-        </div>
-        <textarea id="aiTextPrompt" placeholder="Enter your prompt here..."></textarea>
-        <div class="row" style="margin-top:10px"><button class="btn" onclick="generateAiText(event)">Generate Text</button><button class="ghost" onclick="resetAiText()">Cancel / Reset</button></div>
-        <div id="aiTextResult" class="result-area"></div>
-      </div>
-
-      <!-- AI IMAGE GENERATOR -->
-      <div id="aiImageGenerator" class="card section">
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <h3>🖼️ AI Image Generator</h3>
-          <div>
-            <button class="ghost" onclick="resetAiImage()">Clear</button>
-            <button class="ghost" onclick="closeAll()">Close</button>
-          </div>
-        </div>
-      <textarea id="aiImagePrompt" placeholder="Describe the image you want..."></textarea>
-
-<div style="display:flex; gap:10px; margin-top:8px;">
-  <input id="aiImageCount" type="number" min="1" max="5" placeholder="Number of images (1-5)" style="flex:1;">
-  <select id="aiImageSize" style="flex:1;">
-    <option value="256x256">256x256</option>
-    <option value="512x512" selected>512x512</option>
-    <option value="1024x1024">1024x1024</option>
-  </select>
-</div>
-
-<div class="row" style="margin-top:10px">
-  <button class="btn" onclick="generateAiImage(event)">Generate Image</button>
-  <button class="ghost" onclick="resetAiImage()">Cancel / Reset</button>
-</div>
-<div id="aiImageResult" class="result-area"></div>
-      </div>
-
-    </div>
+  <div class="filters">
+    <button class="filter-btn active" data-filter="all">All</button>
+    <button class="filter-btn" data-filter="downloader">Downloaders</button>
+    <button class="filter-btn" data-filter="pdf">PDF</button>
+    <button class="filter-btn" data-filter="image">Image</button>
+    <button class="filter-btn" data-filter="ai">AI</button>
+    <button class="filter-btn" data-filter="utility">Utilities</button>
   </div>
-</main>
+</div>
+
+
+<!-- DOWNLOADERS -->
+<div class="tool-card"
+     data-category="downloader"
+     data-popular="true">
+  <span class="badge">⭐ Most Used</span>
+  <h3>Video Downloaders</h3>
+  <p>Download videos from popular social platforms Via Link.
+Free • Fast • No Watermark.</p>
+
+  <div class="downloader-buttons">
+    <a href="instagram.html"><span class="icon">📸</span> Instagram Downloader</a>
+    <a href="tiktok.html"><span class="icon">🎵</span> TikTok Downloader</a>
+    <a href="facebook.html"><span class="icon">📘</span> Facebook Downloader</a>
+    <a href="twitter.html"><span class="icon">🐦</span> Twitter Downloader</a>
+  </div>
+</div>
+
+
+
+
+
+<!-- ===== POPULAR / RECENT TOOLS ===== -->
+<section class="popular-section">
+  <h2>⭐ Popular & Recent Tools</h2>
+  <div id="popularTools" class="popular-grid"></div>
+</section>
+<!-- PDF TOOLS -->
+<!-- Gpa -->
+<div class="tool-card" data-category="gpa">
+  <h3>GPA Calculator</h3><p>Generate AI text.</p><a class="btn" href="gpa.html">Open Tool</a></div>
+  
+<div class="tool-card" data-category="pdf">
+  <h3>Images to PDF</h3><p>Convert images into one PDF.</p><a class="btn" href="image-to-pdf.html">Open Tool</a></div>
+<div class="tool-card" data-category="pdf">
+  <h3>PDF Merger</h3><p>Merge multiple PDFs.</p><a class="btn" href="pdf-merger.html">Open Tool</a></div>
+
+<div class="tool-card" data-category="pdf">
+  <h3>Text to PDF</h3><p>Create PDF from text.</p><a class="btn" href="text-to-pdf.html">Open Tool</a></div>
+<div class="tool-card" data-category="pdf">
+  <h3>DOC to PDF</h3><p>Convert Word to PDF.</p><a class="btn" href="doc-to-pdf.html">Open Tool</a></div>
+  
+ <div class="tool-card" data-category="pdf">
+  <h3>ZIP ⇄ PDF</h3>
+  <p>Convert ZIP files to PDF and extract PDFs back into ZIP.</p>
+  <a class="btn" href="zip-pdf.html">Open Tool</a>
+</div>
+
+<!-- IMAGE TOOLS -->
+
+<div class="tool-card" data-category="image">
+  <h3>Video Compressor</h3>
+  <p>Compress videos online without losing quality.</p>
+  <a class="btn" href="video-compressor.html">Open Tool</a>
+</div>
+
+<div class="tool-card" data-category="image">
+  <h3>Image Compressor</h3><p>Compress images.</p><a class="btn" href="image-compressor.html">Open Tool</a></div>
+<div class="tool-card" data-category="image">
+  <h3>Image Resizer</h3><p>Resize images.</p><a class="btn" href="image-resizer.html">Open Tool</a></div>
+
+
+
+<!-- UTILITIES -->
+<div class="tool-card" data-category="utility">
+<h3>QR Code Generator</h3><p>Create QR codes.</p><a class="btn" href="qr-generator.html">Open Tool</a></div>
+<div class="tool-card" data-category="utility">
+  <h3>URL Shortener</h3><p>Create short & monetized links.</p><a class="btn" href="url-shortner.html">Open Tool</a></div>
+
+<!-- AI -->
+
+<div class="tool-card" data-category="ai">
+  <h3>AI Image Generator</h3><p>Create AI images.</p><a class="btn" href="image-generator.html">Open Tool</a></div>
+
+<div class="ad-box">💰 INLINE AD PLACEHOLDER</div>
+
+</div>
 
 <footer>
-  © <span id="year"></span> <strong>ToolifyX</strong> • Powered by <a href="https://aaoearn.netlify.app/" target="_blank">AAOEarn</a>
+© 2026 ToolifyX • All tools are free for educational & personal use
 </footer>
 
 <script>
-document.getElementById('year').textContent = new Date().getFullYear();
-
-const themeToggle = document.getElementById('themeToggle');
-if(localStorage.getItem('theme')==='dark'){
-  document.body.classList.add('dark');
-  themeToggle.checked = true;
-}
-themeToggle.addEventListener('change', () => {
-  if(themeToggle.checked){
-    document.body.classList.add('dark');
-    localStorage.setItem('theme','dark');
+if(!localStorage.getItem("age_ok")){
+  if(!confirm("This site may contain adult content. Are you 18+?")){
+    location.href="https://google.com";
   } else {
-    document.body.classList.remove('dark');
-    localStorage.setItem('theme','light');
-  }
-});
-
-// ---------------- OPEN/CLOSE TOOLS ----------------
-function closeAll(){
-  document.querySelectorAll('.section').forEach(s => s.classList.remove('visible'));
-}
-
-function openTool(id){
-  closeAll();
-  const section = document.getElementById(id);
-  section.classList.add('visible');
-  // Scroll down to the tool smoothly
-  section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-// ---------------- IMAGE COMPRESSOR ----------------
-function resetImageCompressor(){
-  document.getElementById('imgInput').value='';
-  document.getElementById('imgResult').innerHTML='';
-}
-function compressImage(){
-  const file = document.getElementById('imgInput').files[0];
-  if(!file){ alert('Select an image first'); return; }
-  const quality = parseFloat(document.getElementById('imgQuality').value);
-  const scale = parseFloat(document.getElementById('imgScale').value);
-  const canvas = document.getElementById('imgCanvas');
-  const ctx = canvas.getContext('2d');
-  const img = new Image();
-  img.onload = function(){
-    canvas.width = img.width*scale;
-    canvas.height = img.height*scale;
-    ctx.drawImage(img,0,0,canvas.width,canvas.height);
-    canvas.toBlob(blob=>{
-      const url = URL.createObjectURL(blob);
-      document.getElementById('imgResult').innerHTML = `<a href="${url}" download="compressed.png">Download Compressed Image</a>`;
-    },'image/png',quality);
-  };
-  img.src = URL.createObjectURL(file);
-}
-
-// ---------------- IMAGE → PDF ----------------
-async function imagesToPdf(){
-  const files = document.getElementById('imagesToPdf').files;
-  if(!files.length){ alert('Select images'); return; }
-  const pdfDoc = await PDFLib.PDFDocument.create();
-  for(const f of files){
-    const imgBytes = await f.arrayBuffer();
-    let img;
-    if(f.type.includes('png')) img = await pdfDoc.embedPng(imgBytes);
-    else img = await pdfDoc.embedJpg(imgBytes);
-    const page = pdfDoc.addPage([img.width,img.height]);
-    page.drawImage(img,{x:0,y:0,width:img.width,height:img.height});
-  }
-  const pdfBytes = await pdfDoc.save();
-  const blob = new Blob([pdfBytes],{type:'application/pdf'});
-  const url = URL.createObjectURL(blob);
-  document.getElementById('img2pdfResult').innerHTML=`<a href="${url}" download="images.pdf">Download PDF</a>`;
-}
-function resetImageToPdf(){
-  document.getElementById('imagesToPdf').value='';
-  document.getElementById('img2pdfResult').innerHTML='';
-}
-
-// ---------------- PDF MERGER ----------------
-async function mergePDFs(){
-  const files = document.getElementById('pdfFiles').files;
-  if(!files.length){ alert('Select PDFs'); return; }
-  const mergedPdf = await PDFLib.PDFDocument.create();
-  for(const f of files){
-    const bytes = await f.arrayBuffer();
-    const pdf = await PDFLib.PDFDocument.load(bytes);
-    const copied = await mergedPdf.copyPages(pdf,pdf.getPageIndices());
-    copied.forEach(p=>mergedPdf.addPage(p));
-  }
-  const mergedBytes = await mergedPdf.save();
-  const blob = new Blob([mergedBytes],{type:'application/pdf'});
-  const url = URL.createObjectURL(blob);
-  document.getElementById('pdfResult').innerHTML=`<a href="${url}" download="merged.pdf">Download Merged PDF</a>`;
-}
-function resetPdfMerger(){
-  document.getElementById('pdfFiles').value='';
-  document.getElementById('pdfResult').innerHTML='';
-}
-
-// ---------------- QR GENERATOR ----------------
-function generateQR(){
-  const text = document.getElementById('qrText').value.trim();
-  if(!text){ alert('Enter text/URL'); return; }
-  const container = document.getElementById('qrResult');
-  container.innerHTML=''; // clear previous
-  new QRCode(container,{text, width:180, height:180});
-}
-function resetQR(){
-  document.getElementById('qrText').value='';
-  document.getElementById('qrResult').innerHTML='';
-}
-
-// ---------------- TEXT CASE CONVERTER ----------------
-function convertCase(type){
-  const txt = document.getElementById('caseText').value;
-  if(!txt){ alert('Enter text'); return; }
-  let res;
-  if(type==='upper') res = txt.toUpperCase();
-  else if(type==='lower') res = txt.toLowerCase();
-  else res = txt.replace(/(^\w|\.\s*\w)/g,c=>c.toUpperCase());
-  document.getElementById('caseResult').textContent = res;
-}
-function resetCase(){
-  document.getElementById('caseText').value='';
-  document.getElementById('caseResult').innerHTML='';
-}
-
-// ---------------- URL SHORTENER ----------------
-async function shortenWithApi(){
-  const url = document.getElementById('longUrl').value.trim();
-  if(!url){ alert('Enter URL'); return; }
-  const result = document.getElementById('shortResult');
-  result.innerHTML='<div class="spinner"></div>';
-  try{
-    const res = await fetch(`/.netlify/functions/shrinkme?url=${encodeURIComponent(url)}`);
-    const data = await res.json();
-    if(data.shortUrl) result.innerHTML=`<a href="${data.shortUrl}" target="_blank">${data.shortUrl}</a>`;
-    else result.innerHTML='Error shortening URL';
-  }catch(e){ result.innerHTML='Error connecting'; }
-}
-function createRedirectHtml(){
-  const url = document.getElementById('longUrl').value.trim();
-  if(!url){ alert('Enter URL'); return; }
-  const content = `<meta http-equiv="refresh" content="0; url=${url}">`;
-  const blob = new Blob([content],{type:'text/html'});
-  const link = URL.createObjectURL(blob);
-  document.getElementById('shortResult').innerHTML=`<a href="${link}" download="redirect.html">Download Redirect Page</a>`;
-}
-function resetShortener(){
-  document.getElementById('longUrl').value='';
-  document.getElementById('shortResult').innerHTML='';
-}
-
-// ---------------- AI TEXT GENERATOR ----------------
-async function generateAiText(){
-  const prompt = document.getElementById('aiTextPrompt').value.trim();
-  if(!prompt){ alert('Enter prompt'); return; }
-  const result = document.getElementById('aiTextResult');
-  result.innerHTML='<div class="spinner"></div>';
-  try{
-    const res = await fetch(`/.netlify/functions/aiText`,{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({prompt})
-    });
-    const data = await res.json();
-    if(data.text) result.textContent = data.text;
-    else result.textContent = 'Error generating text';
-  }catch(e){ result.textContent = 'Connection error'; }
-}
-function resetAiText(){
-  document.getElementById('aiTextPrompt').value='';
-  document.getElementById('aiTextResult').innerHTML='';
-}
-
-// ---------------- AI IMAGE GENERATOR ----------------
-async function generateAiImage(){
-  const prompt = document.getElementById('aiImagePrompt').value.trim();
-  const n = document.getElementById('aiImageCount')?.value || 1;
-  const size = document.getElementById('aiImageSize')?.value || '512x512';
-  const result = document.getElementById('aiImageResult');
-  result.innerHTML='<div class="spinner"></div>';
-
-  if(!prompt){ alert('Enter prompt'); result.innerHTML=''; return; }
-
-  try {
-    const res = await fetch('/.netlify/functions/aiImage',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ prompt, n, size })
-    });
-    const data = await res.json();
-
-    if(data.urls && data.urls.length){
-      result.innerHTML = data.urls.map(url => `<img src="${url}" style="max-width:100%;margin-bottom:10px;border-radius:8px;">`).join('');
-    } else {
-      result.textContent = 'Error generating image';
-    }
-  } catch(e){
-    result.textContent = 'Connection error';
-    console.error(e);
+    localStorage.setItem("age_ok","1");
   }
 }
 </script>
+<script>
+const searchInput = document.getElementById("toolSearch");
+const filterBtns = document.querySelectorAll(".filter-btn");
+const toolCards = document.querySelectorAll(".tool-card");
 
+// SEARCH
+searchInput.addEventListener("input", () => {
+  const q = searchInput.value.toLowerCase();
+  toolCards.forEach(card => {
+    const text = card.innerText.toLowerCase();
+    card.style.display = text.includes(q) ? "flex" : "none";
+  });
+});
+
+// FILTER
+filterBtns.forEach(btn => {
+  btn.addEventListener("click", () => {
+    filterBtns.forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+
+    const filter = btn.dataset.filter;
+
+    toolCards.forEach(card => {
+      if(filter === "all" || card.dataset.category === filter){
+        card.style.display = "flex";
+      } else {
+        card.style.display = "none";
+      }
+    });
+  });
+});
+</script>
 </body>
-  </html>
+</html>
