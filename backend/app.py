@@ -1,83 +1,68 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify
+import os
+import string
+import random
+import requests
+from flask import Flask, request, redirect, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate
-from dotenv import load_dotenv
-import os, string, random, validators
-from datetime import datetime
-
-# Load environment variables
-load_dotenv()
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URI', 'sqlite:///urls.db')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# ================= CONFIG =================
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///urls.db"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+SHRINKME_API = "https://shrinkme.io/api"
+SHRINKME_API_KEY = "YOUR_SHRINKME_API_KEY"
+
+BASE_URL = "https://your-backend-domain.com"  # e.g Render URL
+
 db = SQLAlchemy(app)
-migrate = Migrate(app, db)
 
-# ---------------- MODELS ----------------
-class URL(db.Model):
+# ================= DATABASE =================
+class ShortURL(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    original_url = db.Column(db.String(500), nullable=False)
     short_code = db.Column(db.String(10), unique=True, nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    clicks = db.Column(db.Integer, default=0)
+    shrinkme_url = db.Column(db.String(500), nullable=False)
 
-# ---------------- HELPERS ----------------
-def generate_short_code(length=6):
-    chars = string.ascii_letters + string.digits
-    while True:
-        code = ''.join(random.choice(chars) for _ in range(length))
-        if not URL.query.filter_by(short_code=code).first():
-            return code
+db.create_all()
 
-# ---------------- ROUTES ----------------
-@app.route("/", methods=["GET", "POST"])
-def index():
-    if request.method == "POST":
-        original_url = request.form.get("url").strip()
-        domain_choice = request.form.get("domain")
+# ================= HELPERS =================
+def generate_code(length=6):
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
 
-        if not validators.url(original_url):
-            return render_template("index.html", error="Enter a valid URL.")
+# ================= ROUTES =================
+@app.route("/shorten", methods=["POST"])
+def shorten():
+    data = request.json
+    long_url = data.get("url")
 
-        if domain_choice == "shrinkme":
-            # User chooses ShrinkMe
-            shrinkme_ref = os.getenv("SHRINKME_REF", "")
-            short_url = f"https://shrinkme.io/?r={shrinkme_ref}&u={original_url}"
-            return render_template("index.html", short_url=short_url, original_url=original_url)
+    if not long_url:
+        return jsonify({"error": "Missing URL"}), 400
 
-        # Use our own shortener
-        existing = URL.query.filter_by(original_url=original_url).first()
-        if existing:
-            short_url = request.host_url + existing.short_code
-        else:
-            code = generate_short_code()
-            new_url = URL(original_url=original_url, short_code=code)
-            db.session.add(new_url)
-            db.session.commit()
-            short_url = request.host_url + code
+    # Call ShrinkMe
+    res = requests.get(SHRINKME_API, params={
+        "api": SHRINKME_API_KEY,
+        "url": long_url
+    }).json()
 
-        return render_template("index.html", short_url=short_url, original_url=original_url)
+    if res.get("status") != "success":
+        return jsonify({"error": "ShrinkMe failed"}), 500
 
-    return render_template("index.html")
+    shrinkme_link = res["shortenedUrl"]
 
-@app.route("/<string:short_code>")
-def redirect_short(short_code):
-    url = URL.query.filter_by(short_code=short_code).first_or_404()
-    url.clicks += 1
+    code = generate_code()
+    db.session.add(ShortURL(short_code=code, shrinkme_url=shrinkme_link))
     db.session.commit()
-    return redirect(url.original_url)
 
-@app.route("/api/stats/<string:short_code>")
-def stats(short_code):
-    url = URL.query.filter_by(short_code=short_code).first_or_404()
     return jsonify({
-        "original_url": url.original_url,
-        "short_code": url.short_code,
-        "clicks": url.clicks,
-        "created_at": url.created_at.isoformat()
+        "short_url": f"{BASE_URL}/s/{code}"
     })
 
-# ---------------- MAIN ----------------
+@app.route("/s/<code>")
+def redirect_short(code):
+    link = ShortURL.query.filter_by(short_code=code).first_or_404()
+    return redirect(link.shrinkme_url, code=302)
+
+# ================= RUN =================
 if __name__ == "__main__":
-    app.run (debug=True)
+    app.run()
