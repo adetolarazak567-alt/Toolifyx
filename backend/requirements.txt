@@ -1,3 +1,4 @@
-Flask==2.3.5
-Flask-SQLAlchemy==3.0.5
-gunicorn==21.2.0
+flask
+flask_sqlalchemy
+requests
+gunicorn
