@@ -20,7 +20,6 @@ migrate = Migrate(app, db)
 # ---------------- Video folders ----------------
 UPLOAD_FOLDER = "uploads"
 COMPRESSED_FOLDER = "compressed"
-
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(COMPRESSED_FOLDER, exist_ok=True)
 
@@ -54,20 +53,21 @@ FFMPEG_AVAILABLE = check_ffmpeg()
 
 # ---------------- Routes ----------------
 
+# URL shortener page
 @app.route("/", methods=["GET", "POST"])
-def index():
+def url_shortener():
     try:
         if request.method == "POST":
             original_url = (request.form.get("url") or "").strip()
             domain_choice = request.form.get("domain")
 
             if not validators.url(original_url):
-                return render_template("index.html", error="Enter a valid URL.")
+                return render_template("url-shortner.html", error="Enter a valid URL.")
 
             if domain_choice == "shrinkme":
                 shrinkme_ref = os.getenv("SHRINKME_REF", "")
                 short_url = f"https://shrinkme.io/?r={shrinkme_ref}&u={original_url}"
-                return render_template("index.html", short_url=short_url, original_url=original_url)
+                return render_template("url-shortner.html", short_url=short_url, original_url=original_url)
 
             existing = URL.query.filter_by(original_url=original_url).first()
             if existing:
@@ -79,12 +79,12 @@ def index():
                 db.session.commit()
                 short_url = request.host_url + code
 
-            return render_template("index.html", short_url=short_url, original_url=original_url)
+            return render_template("url-shortner.html", short_url=short_url, original_url=original_url)
 
-        return render_template("index.html")
+        return render_template("url-shortner.html")
     except Exception as e:
-        print("[Error in /]", e)
-        return render_template("index.html", error="An unexpected error occurred.")
+        print("[Error in URL Shortener]", e)
+        return render_template("url-shortner.html", error="An unexpected error occurred.")
 
 
 @app.route("/<string:short_code>")
@@ -106,7 +106,13 @@ def stats(short_code):
     })
 
 
-# ---------------- Video Compressor ----------------
+# Video compressor page
+@app.route("/video-compressor", methods=["GET"])
+def video_compressor_page():
+    return render_template("video-compressor.html")
+
+
+# Video compression API
 @app.route("/api/compress", methods=["POST"])
 def compress_video():
     if not FFMPEG_AVAILABLE:
@@ -156,7 +162,7 @@ def compress_video():
     )
 
 
-# ---------------- FFmpeg test route (optional) ----------------
+# FFmpeg check (optional)
 @app.route("/ffmpeg-check")
 def ffmpeg_check():
     if FFMPEG_AVAILABLE:
