@@ -1,4 +1,7 @@
 flask
 flask_sqlalchemy
+flask_migrate
 requests
 gunicorn
+validators
+python-dotenv
