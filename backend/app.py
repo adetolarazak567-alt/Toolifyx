@@ -44,8 +44,8 @@ def home():
 def shorten_url():
     data = request.get_json()
     original_url = data.get("url", "").strip()
-    if not validators.url(original_url):
-        return jsonify({"error": "Enter a valid URL"}), 400
+    if not original_url.startswith(("http://", "https://")):
+    return jsonify({"error": "Enter a valid URL"}), 400
 
     # Check if URL already exists
     existing = URL.query.filter_by(original_url=original_url).first()
@@ -103,13 +103,14 @@ def compress_video():
     try:
         # Run ffmpeg compression
         subprocess.run([
-            "ffmpeg", "-i", input_path,
-            "-vcodec", "libx264",
-            "-crf", cr_value,
-            "-preset", "fast",
-            "-acodec", "aac",
-            "-y", output_path
-        ], check=True)
+    "ffmpeg", "-i", input_path,
+    "-vcodec", "libx264",
+    "-preset", "ultrafast",
+    "-crf", cr_value,
+    "-acodec", "aac",
+    "-movflags", "faststart",
+    "-y", output_path
+], check=True)
 
         # Send file back
         return send_file(output_path, as_attachment=True, download_name=output_name)
