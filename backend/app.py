@@ -24,7 +24,8 @@ class Compression(db.Model):
     filename = db.Column(db.String(200))
     created = db.Column(db.DateTime, default=datetime.utcnow)
 
- with app.app_context():
+# ✅ FIX FOR RENDER / GUNICORN
+with app.app_context():
     db.create_all()
 
 # ---------------- HELPERS ----------------
