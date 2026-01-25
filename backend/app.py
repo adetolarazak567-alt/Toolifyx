@@ -1,192 +1,144 @@
 from flask import Flask, request, jsonify, send_file, redirect
 from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate
-from dotenv import load_dotenv
 from datetime import datetime, date
 import os, string, random, subprocess, uuid
 
-# ---------------- LOAD ENV ----------------
-load_dotenv()
-
-app = Flask(__name__, static_folder="static")
-
-# ---------------- CONFIG ----------------
-app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024 * 1024  # 5GB
-app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
-    "DATABASE_URI", "sqlite:///toolifyx.db"
-)
+app = Flask(__name__)
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///toolifyx.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024 * 1024
 
 db = SQLAlchemy(app)
-migrate = Migrate(app, db)
 
 # ---------------- MODELS ----------------
 
-class URL(db.Model):
+class ShortURL(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    original_url = db.Column(db.String(500), nullable=False)
-    short_code = db.Column(db.String(10), unique=True, nullable=False)
+    original = db.Column(db.String(500))
+    code = db.Column(db.String(10), unique=True)
     clicks = db.Column(db.Integer, default=0)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
+    created = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Compression(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     filename = db.Column(db.String(200))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created = db.Column(db.DateTime, default=datetime.utcnow)
 
+db.create_all()
 
 # ---------------- HELPERS ----------------
 
-def generate_short_code(length=6):
+def gen_code(length=6):
     chars = string.ascii_letters + string.digits
     while True:
-        code = "".join(random.choice(chars) for _ in range(length))
-        if not URL.query.filter_by(short_code=code).first():
-            return code
-
-
-# ---------------- HOME ----------------
-
-@app.route("/")
-def home():
-    return "ToolifyX backend running"
-
+        c = "".join(random.choice(chars) for _ in range(length))
+        if not ShortURL.query.filter_by(code=c).first():
+            return c
 
 # ---------------- URL SHORTENER ----------------
 
 @app.route("/api/shorten", methods=["POST"])
 def shorten():
-    data = request.get_json()
-    long_url = data.get("url", "").strip()
+    url = request.json.get("url","").strip()
+    if not url.startswith(("http://","https://")):
+        return jsonify({"error":"Invalid URL"}),400
 
-    if not long_url.startswith(("http://", "https://")):
-        return jsonify({"error": "Invalid URL"}), 400
-
-    existing = URL.query.filter_by(original_url=long_url).first()
+    existing = ShortURL.query.filter_by(original=url).first()
     if existing:
-        short = request.host_url + existing.short_code
-    else:
-        code = generate_short_code()
-        new = URL(original_url=long_url, short_code=code)
-        db.session.add(new)
-        db.session.commit()
-        short = request.host_url + code
+        return jsonify({"short_url": request.host_url + existing.code})
 
-    return jsonify({"short_url": short})
-
-
-@app.route("/<string:code>")
-def redirect_short(code):
-    url = URL.query.filter_by(short_code=code).first_or_404()
-    url.clicks += 1
+    code = gen_code()
+    db.session.add(ShortURL(original=url, code=code))
     db.session.commit()
-    return redirect(url.original_url)
 
+    return jsonify({"short_url": request.host_url + code})
 
-# ---------------- VIDEO COMPRESSOR ----------------
+@app.route("/<code>")
+def redirect_url(code):
+    u = ShortURL.query.filter_by(code=code).first_or_404()
+    u.clicks += 1
+    db.session.commit()
+    return redirect(u.original)
+
+# ---------------- VIDEO COMPRESS ----------------
 
 @app.route("/api/compress", methods=["POST"])
-def compress_video():
-    if "video" not in request.files:
-        return jsonify({"error": "No video uploaded"}), 400
+def compress():
+    file = request.files.get("video")
+    level = request.form.get("level","medium")
 
-    file = request.files["video"]
-    level = request.form.get("level", "medium")
+    crf = {"low":"18","medium":"23","high":"28"}.get(level,"23")
 
-    crf_map = {
-        "low": "18",
-        "medium": "23",
-        "high": "28"
-    }
+    inp = f"/tmp/{uuid.uuid4().hex}_{file.filename}"
+    out = f"/tmp/toolifyx_{uuid.uuid4().hex}.mp4"
 
-    crf = crf_map.get(level, "23")
+    file.save(inp)
 
-    input_path = f"/tmp/{uuid.uuid4().hex}_{file.filename}"
-    output_name = f"toolifyx_{uuid.uuid4().hex}.mp4"
-    output_path = f"/tmp/{output_name}"
-
-    file.save(input_path)
-
-    # ⚡ FAST FFmpeg SETTINGS
-    command = [
-        "ffmpeg",
-        "-i", input_path,
-        "-map_metadata", "-1",
-        "-movflags", "faststart",
-        "-preset", "ultrafast",     # SPEED BOOST
-        "-threads", "2",            # Render-safe
-        "-crf", crf,
-        "-vcodec", "libx264",
-        "-acodec", "aac",
-        "-y",
-        output_path
+    cmd = [
+        "ffmpeg","-i",inp,
+        "-preset","ultrafast",
+        "-threads","2",
+        "-crf",crf,
+        "-movflags","faststart",
+        "-vcodec","libx264",
+        "-acodec","aac",
+        "-y",out
     ]
 
-    try:
-        subprocess.run(command, check=True)
+    subprocess.run(cmd, check=True)
 
-        # save stats
-        db.session.add(Compression(filename=output_name))
-        db.session.commit()
+    db.session.add(Compression(filename=os.path.basename(out)))
+    db.session.commit()
 
-        response = send_file(
-            output_path,
-            as_attachment=True,
-            download_name=output_name
-        )
+    response = send_file(out, as_attachment=True)
 
-        @response.call_on_close
-        def cleanup():
-            if os.path.exists(input_path):
-                os.remove(input_path)
-            if os.path.exists(output_path):
-                os.remove(output_path)
+    @response.call_on_close
+    def clean():
+        if os.path.exists(inp): os.remove(inp)
+        if os.path.exists(out): os.remove(out)
 
-        return response
+    return response
 
-    except subprocess.CalledProcessError:
-        return jsonify({"error": "Compression failed"}), 500
+# ---------------- ADMIN — URL ----------------
 
-
-# ---------------- ADMIN STATS API ----------------
-
-@app.route("/admin/stats")
-def admin_stats():
-    total_links = URL.query.count()
-    total_clicks = db.session.query(db.func.sum(URL.clicks)).scalar() or 0
-    total_compressions = Compression.query.count()
-
-    today = date.today()
-    today_compressions = Compression.query.filter(
-        db.func.date(Compression.created_at) == today
-    ).count()
-
+@app.route("/admin/url/stats")
+def url_stats():
     return jsonify({
-        "total_links": total_links,
-        "total_clicks": total_clicks,
-        "total_compressions": total_compressions,
-        "today_compressions": today_compressions
+        "total_links": ShortURL.query.count(),
+        "total_clicks": db.session.query(db.func.sum(ShortURL.clicks)).scalar() or 0
     })
 
+@app.route("/admin/url/daily")
+def url_daily():
+    data = db.session.query(
+        db.func.date(ShortURL.created),
+        db.func.count(ShortURL.id)
+    ).group_by(db.func.date(ShortURL.created)).all()
 
-@app.route("/admin/daily-compressions")
-def daily_compressions():
-    data = (
-        db.session.query(
-            db.func.date(Compression.created_at),
-            db.func.count(Compression.id)
-        )
-        .group_by(db.func.date(Compression.created_at))
-        .all()
-    )
+    return jsonify([{"date":str(d[0]),"count":d[1]} for d in data])
 
-    return jsonify([
-        {"date": str(d[0]), "count": d[1]} for d in data
-    ])
+# ---------------- ADMIN — COMPRESSION ----------------
 
+@app.route("/admin/compress/stats")
+def compress_stats():
+    today = date.today()
+    return jsonify({
+        "total": Compression.query.count(),
+        "today": Compression.query.filter(
+            db.func.date(Compression.created)==today
+        ).count()
+    })
 
-# ---------------- MAIN ----------------
+@app.route("/admin/compress/daily")
+def compress_daily():
+    data = db.session.query(
+        db.func.date(Compression.created),
+        db.func.count(Compression.id)
+    ).group_by(db.func.date(Compression.created)).all()
+
+    return jsonify([{"date":str(d[0]),"count":d[1]} for d in data])
+
+# ---------------- RUN ----------------
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT",5000)))
