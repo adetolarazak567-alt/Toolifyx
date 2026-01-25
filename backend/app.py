@@ -8,10 +8,9 @@ app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///toolifyx.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024 * 1024  # 5GB max
 
-db = SQLAlchemy(app) 
+db = SQLAlchemy(app)
 
 # ---------------- MODELS ----------------
-
 class ShortURL(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     original = db.Column(db.String(500))
@@ -24,7 +23,9 @@ class Compression(db.Model):
     filename = db.Column(db.String(200))
     created = db.Column(db.DateTime, default=datetime.utcnow)
 
-db.create_all()
+# ---------------- CREATE TABLES ----------------
+with app.app_context():
+    db.create_all()
 
 # ---------------- HELPERS ----------------
 
