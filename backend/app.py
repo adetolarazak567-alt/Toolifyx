@@ -24,7 +24,8 @@ class Compression(db.Model):
     filename = db.Column(db.String(200))
     created = db.Column(db.DateTime, default=datetime.utcnow)
 
-db.create_all()
+ with app.app_context():
+    db.create_all()
 
 # ---------------- HELPERS ----------------
 
