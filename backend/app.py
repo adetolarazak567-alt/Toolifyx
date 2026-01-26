@@ -1,14 +1,18 @@
 from flask import Flask, request, jsonify, send_file, redirect
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, date
-import os, string, random, subprocess, uuid
+import os, string, random, subprocess, uuid, threading, time
 
 app = Flask(__name__)
+
+# ---------------- CONFIG ----------------
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///toolifyx.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024 * 1024  # 5GB max
+app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024 * 1024  # 5GB
 
 db = SQLAlchemy(app)
+
+UPLOAD_DIR = "/tmp"
 
 # ---------------- MODELS ----------------
 class ShortURL(db.Model):
@@ -23,12 +27,15 @@ class Compression(db.Model):
     filename = db.Column(db.String(200))
     created = db.Column(db.DateTime, default=datetime.utcnow)
 
-# ---------------- CREATE TABLES ----------------
 with app.app_context():
     db.create_all()
 
-# ---------------- HELPERS ----------------
+# ---------------- ROOT ----------------
+@app.route("/")
+def home():
+    return "ToolifyX backend running ✅", 200
 
+# ---------------- HELPERS ----------------
 def gen_code(length=6):
     chars = string.ascii_letters + string.digits
     while True:
@@ -36,11 +43,10 @@ def gen_code(length=6):
         if not ShortURL.query.filter_by(code=c).first():
             return c
 
-# ---------------- IN-MEMORY PROGRESS ----------------
-compression_progress = {}
+# ---------------- GLOBAL PROGRESS ----------------
+compression_jobs = {}
 
 # ---------------- URL SHORTENER ----------------
-
 @app.route("/api/shorten", methods=["POST"])
 def shorten():
     url = request.json.get("url", "").strip()
@@ -64,88 +70,110 @@ def redirect_url(code):
     db.session.commit()
     return redirect(u.original)
 
-# ---------------- VIDEO COMPRESS ----------------
+# ---------------- VIDEO COMPRESSION WORKER ----------------
+def run_ffmpeg(job_id, input_path, output_path, crf):
+    try:
+        compression_jobs[job_id]["status"] = "processing"
+        compression_jobs[job_id]["progress"] = 1
 
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i", input_path,
+            "-vcodec", "libx264",
+            "-preset", "ultrafast",
+            "-crf", str(crf),
+            "-acodec", "aac",
+            "-movflags", "faststart",
+            "-progress", "pipe:1",
+            "-nostats",
+            output_path
+        ]
+
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True
+        )
+
+        for line in process.stdout:
+            if "out_time_ms=" in line:
+                ms = int(line.split("=")[1])
+                percent = min(95, int(ms / 300000))  # safe estimate
+                compression_jobs[job_id]["progress"] = percent
+
+        process.wait()
+
+        compression_jobs[job_id]["progress"] = 100
+        compression_jobs[job_id]["status"] = "done"
+
+        with app.app_context():
+            db.session.add(Compression(filename=os.path.basename(output_path)))
+            db.session.commit()
+
+        # cleanup input
+        if os.path.exists(input_path):
+            os.remove(input_path)
+
+    except Exception as e:
+        compression_jobs[job_id]["status"] = "error"
+        compression_jobs[job_id]["error"] = str(e)
+
+# ---------------- START COMPRESSION ----------------
 @app.route("/api/compress", methods=["POST"])
 def compress():
     file = request.files.get("video")
     level = request.form.get("level", "medium")
 
+    if not file:
+        return jsonify({"error": "No file uploaded"}), 400
+
     job_id = uuid.uuid4().hex
-    compression_progress[job_id] = 0
 
-    crf = {"low": "18", "medium": "23", "high": "28"}.get(level, "23")
+    crf_map = {
+        "low": 18,
+        "medium": 23,
+        "high": 28
+    }
+    crf = crf_map.get(level, 23)
 
-    inp = f"/tmp/{job_id}_{file.filename}"
-    out = f"/tmp/{job_id}.mp4"
-    file.save(inp)
+    input_path = os.path.join(UPLOAD_DIR, f"{job_id}_{file.filename}")
+    output_path = os.path.join(UPLOAD_DIR, f"{job_id}.mp4")
 
-    cmd = [
-        "ffmpeg",
-        "-i", inp,
-        "-preset", "ultrafast",
-        "-movflags", "faststart",
-        "-vcodec", "libx264",
-        "-acodec", "aac",
-        "-crf", crf,
-        "-progress", "pipe:1",
-        "-nostats",
-        "-y", out
-    ]
+    file.save(input_path)
 
-    process = subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        universal_newlines=True
+    compression_jobs[job_id] = {
+        "progress": 0,
+        "status": "queued"
+    }
+
+    t = threading.Thread(
+        target=run_ffmpeg,
+        args=(job_id, input_path, output_path, crf),
+        daemon=True
     )
-
-    for line in process.stdout:
-        if "out_time_ms=" in line:
-            ms = int(line.split("=")[1])
-            # Approximate percentage
-            compression_progress[job_id] = min(99, int(ms / 100000))
-    process.wait()
-    compression_progress[job_id] = 100
-
-    # Record in DB
-    db.session.add(Compression(filename=os.path.basename(out)))
-    db.session.commit()
+    t.start()
 
     return jsonify({
         "job_id": job_id,
         "download": f"/api/download/{job_id}"
     })
 
-# ---------------- PROGRESS CHECK ----------------
+# ---------------- PROGRESS ----------------
 @app.route("/api/progress/<job_id>")
 def progress(job_id):
-    return jsonify({"progress": compression_progress.get(job_id, 0)})
+    return jsonify(compression_jobs.get(job_id, {"progress": 0}))
 
 # ---------------- DOWNLOAD ----------------
 @app.route("/api/download/<job_id>")
 def download(job_id):
-    path = f"/tmp/{job_id}.mp4"
+    path = os.path.join(UPLOAD_DIR, f"{job_id}.mp4")
+    if not os.path.exists(path):
+        return jsonify({"error": "File not ready"}), 404
     return send_file(path, as_attachment=True)
 
-# ---------------- ADMIN — URL ----------------
-@app.route("/admin/url/stats")
-def url_stats():
-    return jsonify({
-        "total_links": ShortURL.query.count(),
-        "total_clicks": db.session.query(db.func.sum(ShortURL.clicks)).scalar() or 0
-    })
-
-@app.route("/admin/url/daily")
-def url_daily():
-    data = db.session.query(
-        db.func.date(ShortURL.created),
-        db.func.count(ShortURL.id)
-    ).group_by(db.func.date(ShortURL.created)).all()
-
-    return jsonify([{"date": str(d[0]), "count": d[1]} for d in data])
-
-# ---------------- ADMIN — COMPRESSION ----------------
+# ---------------- ADMIN ----------------
 @app.route("/admin/compress/stats")
 def compress_stats():
     today = date.today()
@@ -156,14 +184,12 @@ def compress_stats():
         ).count()
     })
 
-@app.route("/admin/compress/daily")
-def compress_daily():
-    data = db.session.query(
-        db.func.date(Compression.created),
-        db.func.count(Compression.id)
-    ).group_by(db.func.date(Compression.created)).all()
-
-    return jsonify([{"date": str(d[0]), "count": d[1]} for d in data])
+@app.route("/admin/url/stats")
+def url_stats():
+    return jsonify({
+        "total_links": ShortURL.query.count(),
+        "total_clicks": db.session.query(db.func.sum(ShortURL.clicks)).scalar() or 0
+    })
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
