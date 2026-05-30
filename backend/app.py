@@ -315,10 +315,12 @@ def cleanup_loop():
 cleanup_thread = threading.Thread(target=cleanup_loop, daemon=True)
 cleanup_thread.start()
 
-# ------------------------- SHUTDOWN (graceful) -------------------------
-@app.teardown_appcontext
-def shutdown(exception=None):
+import atexit
+
+def shutdown_executor():
     executor.shutdown(wait=True)
+
+atexit.register(shutdown_executor)
 
 # ------------------------- RUN -------------------------
 if __name__ == "__main__":
