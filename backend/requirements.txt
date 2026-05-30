@@ -1,5 +1,6 @@
-flask
-flask_sqlalchemy
-requests
-gunicorn
-python-dotenv
+Flask==2.3.3
+Flask-SQLAlchemy==3.1.1
+Werkzeug==2.3.7
+flask-cors==4.0.1
+gunicorn==21.2.0
+python-dotenv==1.0.0
