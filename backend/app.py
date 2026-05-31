@@ -4,7 +4,7 @@ import subprocess
 import time
 import logging
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, date
 from flask import Flask, request, jsonify, send_file
 from flask_sqlalchemy import SQLAlchemy
@@ -13,17 +13,17 @@ from flask_cors import CORS
 
 # ------------------------- CONFIGURATION -------------------------
 app = Flask(__name__)
-CORS(app)  # Allow frontend from any origin
+CORS(app)
 
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///toolifyx.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024 * 1024  # 5GB max upload
-app.config["MAX_CONCURRENT_JOBS"] = 4  # Prevent resource exhaustion
+app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024 * 1024  # 5GB
+app.config["MAX_CONCURRENT_JOBS"] = 4
+app.config["CHUNK_SIZE"] = 10 * 1024 * 1024  # 10MB chunks
 
 UPLOAD_DIR = "/tmp"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -46,12 +46,20 @@ with app.app_context():
 
 # ------------------------- THREAD POOL & JOB TRACKER -------------------------
 executor = ThreadPoolExecutor(max_workers=app.config["MAX_CONCURRENT_JOBS"])
-active_jobs = {}  # job_id -> {progress, status, error}
-job_lock = threading.Lock()  # To protect `active_jobs`
+active_jobs = {}
+job_lock = threading.Lock()
 
 # ------------------------- HELPERS -------------------------
+def save_file_stream(request_stream, output_path, expected_size=None):
+    """Stream file to disk chunk by chunk (no memory blowup)."""
+    with open(output_path, 'wb') as f:
+        while True:
+            chunk = request_stream.read(app.config["CHUNK_SIZE"])
+            if not chunk:
+                break
+            f.write(chunk)
+
 def get_video_duration(file_path):
-    """Return duration in milliseconds using ffprobe."""
     try:
         cmd = [
             "ffprobe", "-v", "error", "-show_entries",
@@ -59,12 +67,11 @@ def get_video_duration(file_path):
             file_path
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        return float(result.stdout.strip()) * 1000  # ms
+        return float(result.stdout.strip()) * 1000
     except Exception:
-        return None  # Unknown duration
+        return None
 
 def is_video_file(file_path):
-    """Check if file is a valid video via ffprobe."""
     try:
         subprocess.run(
             ["ffprobe", "-v", "error", "-show_entries", "format=format_name", file_path],
@@ -75,7 +82,6 @@ def is_video_file(file_path):
         return False
 
 def update_db(job_id, status=None, progress=None, error_msg=None):
-    """Update job record in SQLite."""
     with app.app_context():
         job = Job.query.filter_by(job_id=job_id).first()
         if job:
@@ -90,7 +96,6 @@ def update_db(job_id, status=None, progress=None, error_msg=None):
             db.session.commit()
 
 def update_active_job(job_id, progress=None, status=None, error=None):
-    """Thread‑safe update of in‑memory job tracker."""
     with job_lock:
         if job_id not in active_jobs:
             active_jobs[job_id] = {"progress": 0, "status": "queued", "error": None}
@@ -103,7 +108,6 @@ def update_active_job(job_id, progress=None, status=None, error=None):
 
 # ------------------------- WORKER FUNCTIONS -------------------------
 def run_ffmpeg_job(job_id, input_path, output_path, cmd, total_duration_ms):
-    """Generic FFmpeg runner with progress tracking."""
     try:
         update_active_job(job_id, status="processing", progress=1)
         update_db(job_id, status="processing", progress=1)
@@ -127,7 +131,6 @@ def run_ffmpeg_job(job_id, input_path, output_path, cmd, total_duration_ms):
                     pass
 
         process.wait()
-
         if process.returncode != 0:
             raise RuntimeError(f"FFmpeg exited with code {process.returncode}")
 
@@ -139,47 +142,28 @@ def run_ffmpeg_job(job_id, input_path, output_path, cmd, total_duration_ms):
         update_active_job(job_id, status="error", error=str(e))
         update_db(job_id, status="error", error_msg=str(e))
     finally:
-        # Cleanup input file
         if os.path.exists(input_path):
             os.remove(input_path)
 
 def run_compress(job_id, input_path, output_path, crf):
-    """Video compression worker."""
-    total_duration_ms = get_video_duration(input_path)
-    if total_duration_ms is None:
-        # Fallback to approximate progress (50 min video assumption)
-        total_duration_ms = 3_000_000  # 50 minutes in ms
-
+    total_duration_ms = get_video_duration(input_path) or 3_000_000
     cmd = [
-        "ffmpeg", "-y",
-        "-i", input_path,
-        "-vcodec", "libx264",
-        "-preset", "ultrafast",
-        "-crf", str(crf),
-        "-acodec", "aac",
+        "ffmpeg", "-y", "-i", input_path,
+        "-vcodec", "libx264", "-preset", "ultrafast",
+        "-crf", str(crf), "-acodec", "aac",
         "-movflags", "faststart",
-        "-progress", "pipe:1",
-        "-nostats",
+        "-progress", "pipe:1", "-nostats",
         output_path
     ]
     run_ffmpeg_job(job_id, input_path, output_path, cmd, total_duration_ms)
 
 def run_mp3(job_id, input_path, output_path, bitrate):
-    """MP3 conversion worker."""
-    total_duration_ms = get_video_duration(input_path)
-    if total_duration_ms is None:
-        total_duration_ms = 3_000_000
-
+    total_duration_ms = get_video_duration(input_path) or 3_000_000
     cmd = [
-        "ffmpeg", "-y",
-        "-i", input_path,
-        "-vn",
-        "-acodec", "libmp3lame",
-        "-ab", bitrate,
-        "-ar", "44100",
-        "-ac", "2",
-        "-progress", "pipe:1",
-        "-nostats",
+        "ffmpeg", "-y", "-i", input_path,
+        "-vn", "-acodec", "libmp3lame",
+        "-ab", bitrate, "-ar", "44100", "-ac", "2",
+        "-progress", "pipe:1", "-nostats",
         output_path
     ]
     run_ffmpeg_job(job_id, input_path, output_path, cmd, total_duration_ms)
@@ -195,13 +179,15 @@ def health():
 
 @app.route("/api/compress", methods=["POST"])
 def compress():
-    file = request.files.get("video")
-    level = request.form.get("level", "medium")
-
-    if not file:
+    if 'video' not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
-    # Validate file extension (optional) and content
+    file = request.files['video']
+    level = request.form.get("level", "medium")
+
+    if not file.filename:
+        return jsonify({"error": "Empty filename"}), 400
+
     filename = secure_filename(file.filename)
     if not filename.lower().endswith(('.mp4', '.mov', '.avi', '.mkv', '.webm')):
         return jsonify({"error": "Unsupported video file type"}), 400
@@ -210,9 +196,9 @@ def compress():
     input_path = os.path.join(UPLOAD_DIR, f"{job_id}_in_{filename}")
     output_path = os.path.join(UPLOAD_DIR, f"{job_id}.mp4")
 
-    file.save(input_path)
+    # Stream to disk (no memory blowup)
+    save_file_stream(file.stream, input_path)
 
-    # Verify it's really a video
     if not is_video_file(input_path):
         os.remove(input_path)
         return jsonify({"error": "Uploaded file is not a valid video"}), 400
@@ -220,24 +206,24 @@ def compress():
     crf_map = {"low": 18, "medium": 23, "high": 28}
     crf = crf_map.get(level, 23)
 
-    # DB record
     db.session.add(Job(job_id=job_id, job_type="compress", filename=filename, status="queued", progress=0))
     db.session.commit()
 
     update_active_job(job_id, progress=0, status="queued")
-
-    # Submit to thread pool
     executor.submit(run_compress, job_id, input_path, output_path, crf)
 
     return jsonify({"job_id": job_id})
 
 @app.route("/api/convert-mp3", methods=["POST"])
 def convert_mp3():
-    file = request.files.get("video")
+    if 'video' not in request.files:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    file = request.files['video']
     bitrate = request.form.get("bitrate", "192k")
 
-    if not file:
-        return jsonify({"error": "No file uploaded"}), 400
+    if not file.filename:
+        return jsonify({"error": "Empty filename"}), 400
 
     filename = secure_filename(file.filename)
     if not filename.lower().endswith(('.mp4', '.mov', '.avi', '.mkv', '.webm')):
@@ -247,7 +233,7 @@ def convert_mp3():
     input_path = os.path.join(UPLOAD_DIR, f"{job_id}_in_{filename}")
     output_path = os.path.join(UPLOAD_DIR, f"{job_id}.mp3")
 
-    file.save(input_path)
+    save_file_stream(file.stream, input_path)
 
     if not is_video_file(input_path):
         os.remove(input_path)
@@ -257,7 +243,6 @@ def convert_mp3():
     db.session.commit()
 
     update_active_job(job_id, progress=0, status="queued")
-
     executor.submit(run_mp3, job_id, input_path, output_path, bitrate)
 
     return jsonify({"job_id": job_id})
@@ -266,11 +251,7 @@ def convert_mp3():
 def progress(job_id):
     with job_lock:
         data = active_jobs.get(job_id, {"progress": 0, "status": "unknown", "error": None})
-    return jsonify({
-        "progress": data["progress"],
-        "status": data["status"],
-        "error": data["error"]
-    })
+    return jsonify(data)
 
 @app.route("/api/download/<job_id>")
 def download(job_id):
@@ -298,12 +279,12 @@ def stats():
         "mp3_jobs": Job.query.filter_by(job_type="mp3").count()
     })
 
-# ------------------------- CLEANUP (background thread) -------------------------
+# ------------------------- CLEANUP -------------------------
 def cleanup_loop():
     while True:
         time.sleep(600)
         try:
-            cutoff = time.time() - 3600 * 24  # 24 hours (increased from 1h)
+            cutoff = time.time() - 3600 * 24
             for f in os.listdir(UPLOAD_DIR):
                 path = os.path.join(UPLOAD_DIR, f)
                 if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
@@ -315,12 +296,7 @@ def cleanup_loop():
 cleanup_thread = threading.Thread(target=cleanup_loop, daemon=True)
 cleanup_thread.start()
 
-import atexit
-
-def shutdown_executor():
-    executor.shutdown(wait=True)
-
-atexit.register(shutdown_executor)
+# No shutdown handler – executor stays alive
 
 # ------------------------- RUN -------------------------
 if __name__ == "__main__":
