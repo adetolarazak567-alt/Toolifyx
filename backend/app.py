@@ -17,7 +17,7 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///toolifyx.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500MB limit (safe for free tier)
+app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500MB limit
 
 UPLOAD_DIR = "/tmp/toolifyx"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -44,7 +44,7 @@ with app.app_context():
     db.create_all()
 
 # ------------------------- THREAD POOL -------------------------
-executor = ThreadPoolExecutor(max_workers=2)  # Reduced to 2 for free tier stability
+executor = ThreadPoolExecutor(max_workers=2)
 active_jobs = {}
 job_lock = threading.Lock()
 
@@ -60,7 +60,7 @@ def get_video_duration(file_path):
         return float(result.stdout.strip()) * 1000
     except Exception as e:
         logger.warning(f"Could not get duration: {e}")
-        return 3_000_000  # Default 50 min
+        return 3_000_000
 
 def is_video_file(file_path):
     try:
@@ -124,7 +124,7 @@ def run_ffmpeg_job(job_id, input_path, output_path, cmd, total_duration_ms):
                 except (ValueError, IndexError):
                     pass
 
-        process.wait(timeout=600)  # 10 min max per job
+        process.wait(timeout=600)
         if process.returncode != 0:
             raise RuntimeError(f"FFmpeg exited with code {process.returncode}")
 
@@ -139,18 +139,74 @@ def run_ffmpeg_job(job_id, input_path, output_path, cmd, total_duration_ms):
         if os.path.exists(input_path):
             os.remove(input_path)
 
-def run_compress(job_id, input_path, output_path, crf):
-    total_duration_ms = get_video_duration(input_path)
-    cmd = [
-        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-        "-i", input_path,
-        "-c:v", "libx264", "-preset", "ultrafast",
-        "-crf", str(crf), "-acodec", "aac", "-b:a", "128k",
-        "-movflags", "faststart",
-        "-progress", "pipe:1", "-nostats",
-        output_path
-    ]
-    run_ffmpeg_job(job_id, input_path, output_path, cmd, total_duration_ms)
+def run_compress(job_id, input_path, output_path, level):
+    try:
+        # Get original file size
+        original_size = os.path.getsize(input_path)
+        
+        # Get duration in seconds
+        duration_probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", input_path],
+            capture_output=True, text=True, timeout=30
+        )
+        duration_sec = float(duration_probe.stdout.strip())
+        
+        # Target file size percentages
+        # Low = 80% of original (slightly smaller, better quality)
+        # Medium = 50% of original (balanced)
+        # High = 25% of original (much smaller)
+        if level == "low":
+            target_pct = 0.80
+        elif level == "medium":
+            target_pct = 0.50
+        else:  # high
+            target_pct = 0.25
+        
+        # Calculate target bitrate from desired file size
+        # File size = (bitrate * duration) / 8
+        # So bitrate = (target_size * 8) / duration
+        target_size_bytes = original_size * target_pct
+        target_bitrate = int((target_size_bytes * 8) / duration_sec)
+        
+        # Sanity checks: min 200k, max = original bitrate
+        min_bitrate = 200_000
+        max_probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=bit_rate",
+             "-of", "default=noprint_wrappers=1:nokey=1", input_path],
+            capture_output=True, text=True, timeout=30
+        )
+        try:
+            max_bitrate = int(max_probe.stdout.strip())
+        except:
+            max_bitrate = 5_000_000
+        
+        target_bitrate = max(min_bitrate, min(target_bitrate, max_bitrate))
+        
+        total_duration_ms = get_video_duration(input_path) or int(duration_sec * 1000)
+        
+        cmd = [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-i", input_path,
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-b:v", str(target_bitrate),
+            "-maxrate", str(int(target_bitrate * 1.2)),
+            "-bufsize", str(target_bitrate * 2),
+            "-c:a", "aac", "-b:a", "64k",
+            "-movflags", "faststart",
+            "-progress", "pipe:1", "-nostats",
+            output_path
+        ]
+        
+        run_ffmpeg_job(job_id, input_path, output_path, cmd, total_duration_ms)
+        
+    except Exception as e:
+        logger.error(f"Compress setup failed: {e}")
+        update_active_job(job_id, status="error", error=str(e))
+        update_db(job_id, status="error", error_msg=str(e))
+        if os.path.exists(input_path):
+            os.remove(input_path)
 
 def run_mp3(job_id, input_path, output_path, bitrate):
     total_duration_ms = get_video_duration(input_path)
@@ -183,7 +239,7 @@ def compress():
     logger.info("=== COMPRESS REQUEST ===")
     logger.info(f"Files: {list(request.files.keys())}")
     logger.info(f"Form: {list(request.form.keys())}")
-    
+
     if "video" not in request.files:
         logger.error("No 'video' field in request.files")
         return jsonify({"error": "No file uploaded"}), 400
@@ -197,7 +253,7 @@ def compress():
 
     filename = secure_filename(file.filename)
     logger.info(f"Secure filename: {filename}")
-    
+
     allowed = (".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv", ".m4v", ".3gp")
     if not filename.lower().endswith(allowed):
         logger.error(f"Bad extension: {filename}")
@@ -216,9 +272,6 @@ def compress():
             os.remove(input_path)
             return jsonify({"error": "Uploaded file is not a valid video"}), 400
 
-        crf_map = {"low": 18, "medium": 23, "high": 28}
-        crf = crf_map.get(level, 23)
-
         with app.app_context():
             db.session.add(Job(
                 job_id=job_id, job_type="compress", 
@@ -227,7 +280,7 @@ def compress():
             db.session.commit()
 
         update_active_job(job_id, progress=0, status="queued")
-        executor.submit(run_compress, job_id, input_path, output_path, crf)
+        executor.submit(run_compress, job_id, input_path, output_path, level)
         logger.info(f"Job {job_id} submitted")
 
         return jsonify({"job_id": job_id}), 200
@@ -242,7 +295,7 @@ def compress():
 def convert_mp3():
     logger.info("=== MP3 REQUEST ===")
     logger.info(f"Files: {list(request.files.keys())}")
-    
+
     if "video" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
@@ -319,9 +372,9 @@ import shutil
 
 def cleanup_loop():
     while True:
-        time.sleep(300)  # 5 minutes
+        time.sleep(300)
         try:
-            cutoff = time.time() - 3600  # 1 hour
+            cutoff = time.time() - 3600
             for f in os.listdir(UPLOAD_DIR):
                 path = os.path.join(UPLOAD_DIR, f)
                 if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
