@@ -4,7 +4,6 @@ import subprocess
 import time
 import logging
 import threading
-import gc
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, date
 from flask import Flask, request, jsonify, send_file
@@ -18,7 +17,7 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///toolifyx.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB max (safe for 512MB RAM)
+app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024 * 1024  # 5GB
 
 UPLOAD_DIR = "/tmp/toolifyx"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -44,9 +43,8 @@ class Job(db.Model):
 with app.app_context():
     db.create_all()
 
-# ------------------------- THREAD POOL -------------------------
-# Only 1 worker to save memory
-executor = ThreadPoolExecutor(max_workers=1)
+# ------------------------- THREAD POOL & JOB TRACKER -------------------------
+executor = ThreadPoolExecutor(max_workers=4)
 active_jobs = {}
 job_lock = threading.Lock()
 
@@ -58,38 +56,34 @@ def get_video_duration(file_path):
             "format=duration", "-of", "default=noprint_wrappers=1:nokey=1",
             file_path
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
         return float(result.stdout.strip()) * 1000
-    except Exception as e:
-        logger.warning(f"Could not get duration: {e}")
-        return 3_000_000
+    except Exception:
+        return None
 
 def is_video_file(file_path):
     try:
-        result = subprocess.run(
+        subprocess.run(
             ["ffprobe", "-v", "error", "-show_entries", "format=format_name", file_path],
-            capture_output=True, text=True, timeout=30
+            capture_output=True, check=True
         )
-        return result.returncode == 0
-    except Exception:
+        return True
+    except subprocess.CalledProcessError:
         return False
 
 def update_db(job_id, status=None, progress=None, error_msg=None):
-    try:
-        with app.app_context():
-            job = Job.query.filter_by(job_id=job_id).first()
-            if job:
-                if status is not None:
-                    job.status = status
-                    if status in ("done", "error"):
-                        job.completed = datetime.utcnow()
-                if progress is not None:
-                    job.progress = progress
-                if error_msg is not None:
-                    job.error_msg = error_msg
-                db.session.commit()
-    except Exception as e:
-        logger.error(f"DB update failed: {e}")
+    with app.app_context():
+        job = Job.query.filter_by(job_id=job_id).first()
+        if job:
+            if status is not None:
+                job.status = status
+                if status in ("done", "error"):
+                    job.completed = datetime.utcnow()
+            if progress is not None:
+                job.progress = progress
+            if error_msg is not None:
+                job.error_msg = error_msg
+            db.session.commit()
 
 def update_active_job(job_id, progress=None, status=None, error=None):
     with job_lock:
@@ -102,7 +96,7 @@ def update_active_job(job_id, progress=None, status=None, error=None):
         if error is not None:
             active_jobs[job_id]["error"] = error
 
-# ------------------------- WORKER -------------------------
+# ------------------------- WORKER FUNCTIONS -------------------------
 def run_ffmpeg_job(job_id, input_path, output_path, cmd, total_duration_ms):
     try:
         update_active_job(job_id, status="processing", progress=1)
@@ -126,7 +120,7 @@ def run_ffmpeg_job(job_id, input_path, output_path, cmd, total_duration_ms):
                 except (ValueError, IndexError):
                     pass
 
-        process.wait(timeout=600)
+        process.wait()
         if process.returncode != 0:
             raise RuntimeError(f"FFmpeg exited with code {process.returncode}")
 
@@ -138,88 +132,27 @@ def run_ffmpeg_job(job_id, input_path, output_path, cmd, total_duration_ms):
         update_active_job(job_id, status="error", error=str(e))
         update_db(job_id, status="error", error_msg=str(e))
     finally:
-        # Clean up input immediately to free memory
         if os.path.exists(input_path):
             os.remove(input_path)
-        gc.collect()  # Force garbage collection
 
-def run_compress(job_id, input_path, output_path, level):
-    try:
-        # Get original file size
-        original_size = os.path.getsize(input_path)
-        
-        # Get duration in seconds
-        duration_probe = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-             "-of", "default=noprint_wrappers=1:nokey=1", input_path],
-            capture_output=True, text=True, timeout=30
-        )
-        duration_sec = float(duration_probe.stdout.strip())
-        
-        # Target file size percentages
-        if level == "low":
-            target_pct = 0.80
-        elif level == "medium":
-            target_pct = 0.50
-        else:  # high
-            target_pct = 0.25
-        
-        # Calculate target bitrate
-        target_size_bytes = original_size * target_pct
-        target_bitrate = int((target_size_bytes * 8) / duration_sec)
-        
-        # Sanity checks
-        min_bitrate = 200_000
-        max_probe = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=bit_rate",
-             "-of", "default=noprint_wrappers=1:nokey=1", input_path],
-            capture_output=True, text=True, timeout=30
-        )
-        try:
-            max_bitrate = int(max_probe.stdout.strip())
-        except:
-            max_bitrate = 5_000_000
-        
-        target_bitrate = max(min_bitrate, min(target_bitrate, max_bitrate))
-        
-        total_duration_ms = get_video_duration(input_path) or int(duration_sec * 1000)
-        
-        # Memory-efficient encoding: no extra threads, smaller buffer
-        cmd = [
-            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-            "-i", input_path,
-            "-c:v", "libx264",
-            "-preset", "fast",
-            "-b:v", str(target_bitrate),
-            "-maxrate", str(int(target_bitrate * 1.2)),
-            "-bufsize", str(target_bitrate * 2),
-            "-threads", "1",  # Single thread to save memory
-            "-c:a", "aac", "-b:a", "64k",
-            "-movflags", "faststart",
-            "-progress", "pipe:1", "-nostats",
-            output_path
-        ]
-        
-        run_ffmpeg_job(job_id, input_path, output_path, cmd, total_duration_ms)
-        
-    except Exception as e:
-        logger.error(f"Compress setup failed: {e}")
-        update_active_job(job_id, status="error", error=str(e))
-        update_db(job_id, status="error", error_msg=str(e))
-        if os.path.exists(input_path):
-            os.remove(input_path)
-        gc.collect()
+def run_compress(job_id, input_path, output_path, crf):
+    total_duration_ms = get_video_duration(input_path) or 3_000_000
+    cmd = [
+        "ffmpeg", "-y", "-i", input_path,
+        "-vcodec", "libx264", "-preset", "ultrafast",
+        "-crf", str(crf), "-acodec", "aac",
+        "-movflags", "faststart",
+        "-progress", "pipe:1", "-nostats",
+        output_path
+    ]
+    run_ffmpeg_job(job_id, input_path, output_path, cmd, total_duration_ms)
 
 def run_mp3(job_id, input_path, output_path, bitrate):
-    total_duration_ms = get_video_duration(input_path)
-    
-    # Memory-efficient MP3 encoding
+    total_duration_ms = get_video_duration(input_path) or 3_000_000
     cmd = [
-        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
-        "-i", input_path,
+        "ffmpeg", "-y", "-i", input_path,
         "-vn", "-acodec", "libmp3lame",
         "-ab", bitrate, "-ar", "44100", "-ac", "2",
-        "-threads", "1",  # Single thread
         "-progress", "pipe:1", "-nostats",
         output_path
     ]
@@ -228,80 +161,51 @@ def run_mp3(job_id, input_path, output_path, bitrate):
 # ------------------------- ROUTES -------------------------
 @app.route("/")
 def home():
-    return jsonify({"status": "running", "version": "1.1"}), 200
+    return "ToolifyX backend running", 200
 
 @app.route("/health")
 def health():
-    import shutil
-    return jsonify({
-        "status": "healthy",
-        "active_jobs": len(active_jobs),
-        "upload_dir": UPLOAD_DIR,
-        "disk_free": shutil.disk_usage(UPLOAD_DIR).free // (1024*1024)
-    }), 200
+    return jsonify({"status": "healthy"}), 200
 
 @app.route("/api/compress", methods=["POST"])
 def compress():
-    logger.info("=== COMPRESS REQUEST ===")
-    logger.info(f"Files: {list(request.files.keys())}")
-    logger.info(f"Form: {list(request.form.keys())}")
-
     if "video" not in request.files:
-        logger.error("No 'video' field in request.files")
         return jsonify({"error": "No file uploaded"}), 400
 
     file = request.files["video"]
     level = request.form.get("level", "medium")
-    logger.info(f"File: {file.filename}, Level: {level}")
 
     if not file.filename:
         return jsonify({"error": "Empty filename"}), 400
 
     filename = secure_filename(file.filename)
-    logger.info(f"Secure filename: {filename}")
-
-    allowed = (".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv", ".m4v", ".3gp")
-    if not filename.lower().endswith(allowed):
-        logger.error(f"Bad extension: {filename}")
-        return jsonify({"error": f"Unsupported file type: {filename}"}), 400
+    if not filename.lower().endswith((".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv", ".m4v")):
+        return jsonify({"error": "Unsupported video file type"}), 400
 
     job_id = uuid.uuid4().hex
     input_path = os.path.join(UPLOAD_DIR, f"{job_id}_in_{filename}")
     output_path = os.path.join(UPLOAD_DIR, f"{job_id}.mp4")
 
-    try:
-        logger.info(f"Saving to {input_path}")
-        file.save(input_path)
-        logger.info(f"Saved. Size: {os.path.getsize(input_path)} bytes")
+    # Stream to disk
+    file.save(input_path)
 
-        if not is_video_file(input_path):
-            os.remove(input_path)
-            return jsonify({"error": "Uploaded file is not a valid video"}), 400
+    if not is_video_file(input_path):
+        os.remove(input_path)
+        return jsonify({"error": "Uploaded file is not a valid video"}), 400
 
-        with app.app_context():
-            db.session.add(Job(
-                job_id=job_id, job_type="compress", 
-                filename=filename, status="queued", progress=0
-            ))
-            db.session.commit()
+    crf_map = {"low": 18, "medium": 23, "high": 28}
+    crf = crf_map.get(level, 23)
 
-        update_active_job(job_id, progress=0, status="queued")
-        executor.submit(run_compress, job_id, input_path, output_path, level)
-        logger.info(f"Job {job_id} submitted")
+    db.session.add(Job(job_id=job_id, job_type="compress", filename=filename, status="queued", progress=0))
+    db.session.commit()
 
-        return jsonify({"job_id": job_id}), 200
+    update_active_job(job_id, progress=0, status="queued")
+    executor.submit(run_compress, job_id, input_path, output_path, crf)
 
-    except Exception as e:
-        logger.error(f"Compress setup failed: {e}", exc_info=True)
-        if os.path.exists(input_path):
-            os.remove(input_path)
-        return jsonify({"error": str(e)}), 500
+    return jsonify({"job_id": job_id})
 
 @app.route("/api/convert-mp3", methods=["POST"])
 def convert_mp3():
-    logger.info("=== MP3 REQUEST ===")
-    logger.info(f"Files: {list(request.files.keys())}")
-
     if "video" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
@@ -312,44 +216,32 @@ def convert_mp3():
         return jsonify({"error": "Empty filename"}), 400
 
     filename = secure_filename(file.filename)
-    allowed = (".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv", ".m4v", ".3gp")
-    if not filename.lower().endswith(allowed):
-        return jsonify({"error": f"Unsupported file type: {filename}"}), 400
+    if not filename.lower().endswith((".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv", ".m4v")):
+        return jsonify({"error": "Unsupported video file type"}), 400
 
     job_id = uuid.uuid4().hex
     input_path = os.path.join(UPLOAD_DIR, f"{job_id}_in_{filename}")
     output_path = os.path.join(UPLOAD_DIR, f"{job_id}.mp3")
 
-    try:
-        file.save(input_path)
+    file.save(input_path)
 
-        if not is_video_file(input_path):
-            os.remove(input_path)
-            return jsonify({"error": "Uploaded file is not a valid video"}), 400
+    if not is_video_file(input_path):
+        os.remove(input_path)
+        return jsonify({"error": "Uploaded file is not a valid video"}), 400
 
-        with app.app_context():
-            db.session.add(Job(
-                job_id=job_id, job_type="mp3",
-                filename=filename, status="queued", progress=0
-            ))
-            db.session.commit()
+    db.session.add(Job(job_id=job_id, job_type="mp3", filename=filename, status="queued", progress=0))
+    db.session.commit()
 
-        update_active_job(job_id, progress=0, status="queued")
-        executor.submit(run_mp3, job_id, input_path, output_path, bitrate)
+    update_active_job(job_id, progress=0, status="queued")
+    executor.submit(run_mp3, job_id, input_path, output_path, bitrate)
 
-        return jsonify({"job_id": job_id}), 200
-
-    except Exception as e:
-        logger.error(f"MP3 setup failed: {e}", exc_info=True)
-        if os.path.exists(input_path):
-            os.remove(input_path)
-        return jsonify({"error": str(e)}), 500
+    return jsonify({"job_id": job_id})
 
 @app.route("/api/progress/<job_id>")
 def progress(job_id):
     with job_lock:
         data = active_jobs.get(job_id, {"progress": 0, "status": "unknown", "error": None})
-    return jsonify(data), 200
+    return jsonify(data)
 
 @app.route("/api/download/<job_id>")
 def download(job_id):
@@ -363,34 +255,36 @@ def download(job_id):
 def download_mp3(job_id):
     path = os.path.join(UPLOAD_DIR, f"{job_id}.mp3")
     if not os.path.exists(path):
-        return jsonify({"{"error": "File not ready"}), 404
+        return jsonify({"error": "File not ready"}), 404
     name = request.args.get("name", "audio.mp3")
     return send_file(path, as_attachment=True, download_name=name)
 
-# ------------------------- ERROR HANDLER -------------------------
-@app.errorhandler(Exception)
-def handle_error(e):
-    logger.error(f"UNHANDLED ERROR: {str(e)}", exc_info=True)
-    return jsonify({"error": "Server error: " + str(e)}), 500
+@app.route("/admin/stats")
+def stats():
+    today = date.today()
+    return jsonify({
+        "total_jobs": Job.query.count(),
+        "today_jobs": Job.query.filter(db.func.date(Job.created) == today).count(),
+        "compress_jobs": Job.query.filter_by(job_type="compress").count(),
+        "mp3_jobs": Job.query.filter_by(job_type="mp3").count()
+    })
 
 # ------------------------- CLEANUP -------------------------
-import shutil
-
 def cleanup_loop():
     while True:
-        time.sleep(300)
+        time.sleep(600)
         try:
-            cutoff = time.time() - 3600
+            cutoff = time.time() - 3600 * 24
             for f in os.listdir(UPLOAD_DIR):
                 path = os.path.join(UPLOAD_DIR, f)
                 if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
                     os.remove(path)
-                    logger.info(f"Cleaned up: {f}")
-                    gc.collect()
+                    logger.info(f"Cleaned up old file: {f}")
         except Exception as e:
             logger.error(f"Cleanup error: {e}")
 
-threading.Thread(target=cleanup_loop, daemon=True).start()
+cleanup_thread = threading.Thread(target=cleanup_loop, daemon=True)
+cleanup_thread.start()
 
 # ------------------------- RUN -------------------------
 if __name__ == "__main__":
