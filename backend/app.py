@@ -4,6 +4,7 @@ import subprocess
 import time
 import logging
 import threading
+import gc
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, date
 from flask import Flask, request, jsonify, send_file
@@ -17,7 +18,7 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///toolifyx.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500MB limit
+app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB max (safe for 512MB RAM)
 
 UPLOAD_DIR = "/tmp/toolifyx"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -44,7 +45,8 @@ with app.app_context():
     db.create_all()
 
 # ------------------------- THREAD POOL -------------------------
-executor = ThreadPoolExecutor(max_workers=2)
+# Only 1 worker to save memory
+executor = ThreadPoolExecutor(max_workers=1)
 active_jobs = {}
 job_lock = threading.Lock()
 
@@ -136,8 +138,10 @@ def run_ffmpeg_job(job_id, input_path, output_path, cmd, total_duration_ms):
         update_active_job(job_id, status="error", error=str(e))
         update_db(job_id, status="error", error_msg=str(e))
     finally:
+        # Clean up input immediately to free memory
         if os.path.exists(input_path):
             os.remove(input_path)
+        gc.collect()  # Force garbage collection
 
 def run_compress(job_id, input_path, output_path, level):
     try:
@@ -153,9 +157,6 @@ def run_compress(job_id, input_path, output_path, level):
         duration_sec = float(duration_probe.stdout.strip())
         
         # Target file size percentages
-        # Low = 80% of original (slightly smaller, better quality)
-        # Medium = 50% of original (balanced)
-        # High = 25% of original (much smaller)
         if level == "low":
             target_pct = 0.80
         elif level == "medium":
@@ -163,13 +164,11 @@ def run_compress(job_id, input_path, output_path, level):
         else:  # high
             target_pct = 0.25
         
-        # Calculate target bitrate from desired file size
-        # File size = (bitrate * duration) / 8
-        # So bitrate = (target_size * 8) / duration
+        # Calculate target bitrate
         target_size_bytes = original_size * target_pct
         target_bitrate = int((target_size_bytes * 8) / duration_sec)
         
-        # Sanity checks: min 200k, max = original bitrate
+        # Sanity checks
         min_bitrate = 200_000
         max_probe = subprocess.run(
             ["ffprobe", "-v", "error", "-show_entries", "format=bit_rate",
@@ -185,6 +184,7 @@ def run_compress(job_id, input_path, output_path, level):
         
         total_duration_ms = get_video_duration(input_path) or int(duration_sec * 1000)
         
+        # Memory-efficient encoding: no extra threads, smaller buffer
         cmd = [
             "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
             "-i", input_path,
@@ -193,6 +193,7 @@ def run_compress(job_id, input_path, output_path, level):
             "-b:v", str(target_bitrate),
             "-maxrate", str(int(target_bitrate * 1.2)),
             "-bufsize", str(target_bitrate * 2),
+            "-threads", "1",  # Single thread to save memory
             "-c:a", "aac", "-b:a", "64k",
             "-movflags", "faststart",
             "-progress", "pipe:1", "-nostats",
@@ -207,14 +208,18 @@ def run_compress(job_id, input_path, output_path, level):
         update_db(job_id, status="error", error_msg=str(e))
         if os.path.exists(input_path):
             os.remove(input_path)
+        gc.collect()
 
 def run_mp3(job_id, input_path, output_path, bitrate):
     total_duration_ms = get_video_duration(input_path)
+    
+    # Memory-efficient MP3 encoding
     cmd = [
         "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
         "-i", input_path,
         "-vn", "-acodec", "libmp3lame",
         "-ab", bitrate, "-ar", "44100", "-ac", "2",
+        "-threads", "1",  # Single thread
         "-progress", "pipe:1", "-nostats",
         output_path
     ]
@@ -223,10 +228,11 @@ def run_mp3(job_id, input_path, output_path, bitrate):
 # ------------------------- ROUTES -------------------------
 @app.route("/")
 def home():
-    return jsonify({"status": "running", "version": "1.0"}), 200
+    return jsonify({"status": "running", "version": "1.1"}), 200
 
 @app.route("/health")
 def health():
+    import shutil
     return jsonify({
         "status": "healthy",
         "active_jobs": len(active_jobs),
@@ -357,7 +363,7 @@ def download(job_id):
 def download_mp3(job_id):
     path = os.path.join(UPLOAD_DIR, f"{job_id}.mp3")
     if not os.path.exists(path):
-        return jsonify({"error": "File not ready"}), 404
+        return jsonify({"{"error": "File not ready"}), 404
     name = request.args.get("name", "audio.mp3")
     return send_file(path, as_attachment=True, download_name=name)
 
@@ -380,6 +386,7 @@ def cleanup_loop():
                 if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
                     os.remove(path)
                     logger.info(f"Cleaned up: {f}")
+                    gc.collect()
         except Exception as e:
             logger.error(f"Cleanup error: {e}")
 
